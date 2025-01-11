@@ -12,17 +12,11 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import {
-  Car,
-  Battery,
-  MapPin,
-  DollarSign,
-  Building,
-  Calendar,
-} from "lucide-react";
+import { Car, Battery, MapPin, DollarSign, Building } from "lucide-react";
 import { EVData } from "./types";
 import { DashboardCard } from "./components/DashboardCard";
 import { StatsCard } from "./components/StatsCard";
+import { DataTable } from "./components/DataTable";
 
 interface PostalCodeData {
   name: string;
@@ -240,28 +234,45 @@ function App() {
         </div>
         <div className="grid grid-cols-1 gap-8 mt-10">
           <DashboardCard title="Electric Range Distribution">
-            <div className="h-80">
+            <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
+                  className="h-full"
                   data={Object.entries(
-                    data.reduce((acc, curr) => {
-                      const range = Math.floor(curr.ElectricRange / 50) * 50;
-                      acc[`${range}-${range + 50}`] =
-                        (acc[`${range}-${range + 50}`] || 0) + 1;
-                      return acc;
-                    }, {} as Record<string, number>)
-                  ).map(([name, value]) => ({ name, value }))}
+                    data
+                      .filter(
+                        (car) => car.ElectricRange && !isNaN(car.ElectricRange)
+                      )
+                      .reduce((acc, curr) => {
+                        const range = Math.floor(curr.ElectricRange / 50) * 50;
+                        const rangeKey = `${range}-${range + 50}`;
+                        acc[rangeKey] = (acc[rangeKey] || 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>)
+                  )
+                    .map(([name, value]) => ({
+                      name: `${name} miles`,
+                      value,
+                    }))
+                    .sort((a, b) => parseInt(a.name) - parseInt(b.name))}
+                  margin={{ bottom: 10, left: 10 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
                     dataKey="name"
-                    label={{ value: "Range (miles)", position: "bottom" }}
+                    label={{
+                      value: "Range (miles)",
+                      position: "bottom",
+                      offset: 0,
+                      dy: -5,
+                    }}
                   />
                   <YAxis
                     label={{
                       value: "Number of Vehicles",
                       angle: -90,
                       position: "insideLeft",
+                      dx: -5,
                     }}
                   />
                   <Tooltip />
@@ -269,6 +280,56 @@ function App() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </DashboardCard>
+          <DashboardCard title="Model Year Distribution">
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={Object.entries(
+                    data
+                      .filter((car) => car.ModelYear && !isNaN(car.ModelYear)) // Filter undefined
+                      .reduce((acc, curr) => {
+                        const year = parseInt(curr.ModelYear.toString());
+                        if (year >= 2000 && year <= 2024) {
+                          // Valid year range
+                          acc[year] = (acc[year] || 0) + 1;
+                        }
+                        return acc;
+                      }, {} as Record<string, number>)
+                  )
+                    .map(([year, count]) => ({
+                      year: year.toString(),
+                      count,
+                    }))
+                    .sort((a, b) => parseInt(a.year) - parseInt(b.year))}
+                  margin={{ bottom: 10, left: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="year"
+                    label={{
+                      value: "Model Year",
+                      position: "bottom",
+                      offset: 0,
+                      dy: -5,
+                    }}
+                  />
+                  <YAxis
+                    label={{
+                      value: "Number of Vehicles",
+                      angle: -90,
+                      position: "insideLeft",
+                      dx: -5,
+                    }}
+                  />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#2196F3" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </DashboardCard>
+          <DashboardCard title="Detailed Vehicle Information">
+            <DataTable data={data} itemsPerPage={10} />
           </DashboardCard>
         </div>
       </div>
