@@ -12,11 +12,22 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Car, Battery, MapPin, DollarSign, Building } from "lucide-react";
+import {
+  Car,
+  Battery,
+  MapPin,
+  DollarSign,
+  Building,
+  Sun,
+  Moon,
+} from "lucide-react";
 import { EVData } from "./types";
+import { Button } from "@/components/ui/button";
 import { DashboardCard } from "./components/DashboardCard";
 import { StatsCard } from "./components/StatsCard";
 import { DataTable } from "./components/DataTable";
+import { useTheme } from "./components/ThemeProvider";
+import { ThemeProvider } from "./components/ThemeProvider";
 
 interface PostalCodeData {
   name: string;
@@ -24,12 +35,14 @@ interface PostalCodeData {
   models: string[];
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
-
 function App() {
   const [data, setData] = useState<EVData[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isDarkMode, toggleDarkMode } = useTheme();
 
+  const chartColors = isDarkMode
+    ? ["#60A5FA", "#34D399", "#FBBF24", "#F87171"]
+    : ["#3B82F6", "#10B981", "#F59E0B", "#EF4444"];
   useEffect(() => {
     fetch("/data/Electric_Vehicle_Population_Data.csv")
       .then((response) => response.text())
@@ -76,12 +89,23 @@ function App() {
   const totalVehicles = data.length;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
+    <div className="min-h-screen bg-background p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold text-gray-800 mb-8">
+        <h1 className="text-4xl font-bold text-foreground mb-8">
           Electric Vehicle Population Dashboard
         </h1>
-
+        {/* <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleDarkMode}
+          className="absolute top-8 right-8"
+        >
+          {isDarkMode ? (
+            <Sun className="h-12 w-12" />
+          ) : (
+            <Moon className="h-12 w-h-12" />
+          )}
+        </Button> */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <StatsCard title="Total Vehicles" value={totalVehicles} icon={Car} />
           <StatsCard
@@ -111,11 +135,23 @@ function App() {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={makeDistribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#3B82F6" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke={isDarkMode ? "#374151" : "#E5E7EB"}
+                  />
+                  <XAxis
+                    dataKey="name"
+                    stroke={isDarkMode ? "#D1D5DB" : "#374151"}
+                  />
+                  <YAxis stroke={isDarkMode ? "#D1D5DB" : "#374151"} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: isDarkMode ? "#1F2937" : "#FFFFFF",
+                      borderColor: isDarkMode ? "#374151" : "#E5E7EB",
+                      color: isDarkMode ? "#D1D5DB" : "#374151",
+                    }}
+                  />
+                  <Bar dataKey="value" fill={chartColors[0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -137,11 +173,17 @@ function App() {
                     {makeDistribution.map((entry, index) => (
                       <Cell
                         key={entry.name}
-                        fill={COLORS[index % COLORS.length]}
+                        fill={chartColors[index % chartColors.length]}
                       />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: isDarkMode ? "#1F2937" : "#FFFFFF",
+                      borderColor: isDarkMode ? "#374151" : "#E5E7EB",
+                      color: isDarkMode ? "#D1D5DB" : "#374151",
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -167,8 +209,19 @@ function App() {
                     outerRadius={100}
                     label
                   >
-                    {COLORS.map((color, index) => (
-                      <Cell key={`cell-${index}`} fill={color} />
+                    {makeDistribution.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={
+                          isDarkMode
+                            ? ["#60A5FA", "#34D399", "#FBBF24", "#F87171"][
+                                index % 4
+                              ]
+                            : ["#3B82F6", "#10B981", "#F59E0B", "#EF4444"][
+                                index % 4
+                              ]
+                        }
+                      />
                     ))}
                   </Pie>
                   <Tooltip />

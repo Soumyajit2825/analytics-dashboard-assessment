@@ -1,271 +1,336 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { ArrowUpDown, Filter } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CarData } from "../types";
+import { useEffect } from "react";
 
 interface DataTableProps {
   data: CarData[];
   itemsPerPage?: number;
 }
 
-export const DataTable = ({ data, itemsPerPage = 10 }: DataTableProps) => {
+type SortConfig = {
+  key: keyof CarData;
+  direction: "asc" | "desc";
+} | null;
+
+// Debounce function
+function debounce<T extends (...args: any[]) => void>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
+
+// Function to create a search index for faster lookups
+const createSearchIndex = (item: CarData): string => {
+  return Object.values(item)
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase())
+    .join(" ");
+};
+
+export const DataTable = ({
+  data,
+  initialItemsPerPage = 10,
+}: DataTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
-  const [filters, setFilters] = useState<Partial<EVData>>({});
+  const [filters, setFilters] = useState<Partial<CarData>>({});
+  const [sortConfig, setSortConfig] = useState<SortConfig>(null);
+  const [itemsPerPage, setItemsPerPage] = useState(initialItemsPerPage);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
-  const filteredData = data.filter((item) => {
-    return Object.entries(filters).every(([key, value]) => {
-      if (!value) return true;
-      const itemValue = item[key as keyof EVData];
-      return String(itemValue)
-        .toLowerCase()
-        .includes(String(value).toLowerCase());
-    });
-  });
+  // Create search index for each item once
+  const searchIndex = useMemo(() => {
+    return data.map((item) => ({
+      ...item,
+      searchIndex: createSearchIndex(item),
+    }));
+  }, [data]);
 
-  const totalPages = Math.ceil(data.length / itemsPerPage);
+  // Handle search term updates with debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.toLowerCase());
+    }, 100); // 300ms delay
 
-  const paginatedData = data.slice(
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm]);
+
+  // Memoize the filtered data
+  const processedData = useMemo(() => {
+    let result = searchIndex;
+
+    // Apply search term using the pre-computed search index
+    if (debouncedSearchTerm) {
+      result = result.filter((item) =>
+        item.searchIndex.includes(debouncedSearchTerm)
+      );
+    }
+
+    // Apply filters
+    if (Object.keys(filters).length > 0) {
+      result = result.filter((item) =>
+        Object.entries(filters).every(([key, value]) => {
+          if (!value) return true;
+          return String(item[key as keyof CarData]) === String(value);
+        })
+      );
+    }
+
+    // Apply sorting
+    if (sortConfig) {
+      result.sort((a, b) => {
+        const aVal = String(a[sortConfig.key]);
+        const bVal = String(b[sortConfig.key]);
+        return sortConfig.direction === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      });
+    }
+
+    return result;
+  }, [searchIndex, debouncedSearchTerm, filters, sortConfig]);
+
+  // Get unique values for dropdown filters - memoized
+  const getUniqueValues = useCallback(
+    (key: keyof CarData) => {
+      const uniqueSet = new Set<string>();
+      for (const item of data) {
+        const value = item[key];
+        if (value) uniqueSet.add(String(value));
+      }
+      return Array.from(uniqueSet).sort();
+    },
+    [data]
+  );
+
+  const totalPages = Math.ceil(processedData.length / itemsPerPage);
+  const paginatedData = processedData.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  const handleFilterChange = (key: keyof EVData, value: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-    setCurrentPage(1); // Reset to first page when filter changes
+  const handleSort = (key: keyof CarData) => {
+    setSortConfig((current) => {
+      if (current?.key === key) {
+        if (current.direction === "asc") {
+          return { key, direction: "desc" };
+        }
+        return null;
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const renderColumnHeader = (key: keyof CarData, label: string) => {
+    const uniqueValues = getUniqueValues(key);
+    const hasLongList = uniqueValues.length > 8;
+
+    return (
+      <th className="px-4 py-2 font-medium text-left">
+        <div className="flex items-center gap-1">
+          <span>{label}</span>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => handleSort(key)}
+            >
+              <ArrowUpDown className="h-3 w-3" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className={`w-48 bg-popover text-popover-foreground border border-border ${
+                  hasLongList ? "max-h-60 overflow-y-auto" : ""
+                }`}
+              >
+                {uniqueValues.map((value) => (
+                  <DropdownMenuItem
+                    key={String(value)}
+                    onClick={() =>
+                      setFilters((prev) => ({ ...prev, [key]: value }))
+                    }
+                  >
+                    {String(value)}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem
+                  onClick={() => {
+                    const newFilters = { ...filters };
+                    delete newFilters[key];
+                    setFilters(newFilters);
+                  }}
+                >
+                  Clear filter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </th>
+    );
+  };
+
+  const handleItemsPerPageChange = (value: number) => {
+    setItemsPerPage(value);
+    setCurrentPage(1);
   };
 
   return (
-    <div>
-      <div className="max-w-full overflow-x-auto">
-        <table className="min-w-[1200px] text-sm">
-          <thead className="bg-gray-100 sticky top-0">
-            <tr>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter VIN"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("VIN", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter County"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("County", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter City"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("City", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter State"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("State", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Postal Code"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("PostalCode", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Year"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("ModelYear", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Make"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("Make", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Model"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("Model", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Type"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("ElectricVehicleType", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Eligibility"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("Eligibility", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Range"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("ElectricRange", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter MSRP"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) => handleFilterChange("MSRP", e.target.value)}
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter District"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("LegislativeDistrict", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter DOL ID"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("DOLVehicleID", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Location"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("VehicleLocation", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Utility"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("ElectricUtility", e.target.value)
-                  }
-                />
-              </th>
-              <th className="px-4 py-2 whitespace-nowrap">
-                <input
-                  type="text"
-                  placeholder="Filter Census"
-                  className="w-full p-1 text-sm border rounded"
-                  onChange={(e) =>
-                    handleFilterChange("CensusTract", e.target.value)
-                  }
-                />
-              </th>
-            </tr>
-            <tr>
-              <th className="px-4 py-2 whitespace-nowrap">VIN</th>
-              <th className="px-4 py-2 whitespace-nowrap">County</th>
-              <th className="px-4 py-2 whitespace-nowrap">City</th>
-              <th className="px-4 py-2 whitespace-nowrap">State</th>
-              <th className="px-4 py-2 whitespace-nowrap">Postal Code</th>
-              <th className="px-4 py-2 whitespace-nowrap">Model Year</th>
-              <th className="px-4 py-2 whitespace-nowrap">Make</th>
-              <th className="px-4 py-2 whitespace-nowrap">Model</th>
-              <th className="px-4 py-2 whitespace-nowrap">Type</th>
-              <th className="px-4 py-2 whitespace-nowrap">Eligibility</th>
-              <th className="px-4 py-2 whitespace-nowrap">Range</th>
-              <th className="px-4 py-2 whitespace-nowrap">MSRP</th>
-              <th className="px-4 py-2 whitespace-nowrap">District</th>
-              <th className="px-4 py-2 whitespace-nowrap">DOL ID</th>
-              <th className="px-4 py-2 whitespace-nowrap">Location</th>
-              <th className="px-4 py-2 whitespace-nowrap">Utility</th>
-              <th className="px-4 py-2 whitespace-nowrap">Census</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedData.map((car, index) => (
-              <tr key={index} className="border-b hover:bg-gray-50">
-                <td className="px-4 py-2">{car.VIN?.slice(0, 10)}</td>
-                <td className="px-4 py-2">{car.County}</td>
-                <td className="px-4 py-2">{car.City}</td>
-                <td className="px-4 py-2">{car.State}</td>
-                <td className="px-4 py-2">{car.PostalCode}</td>
-                <td className="px-4 py-2">{car.ModelYear}</td>
-                <td className="px-4 py-2">{car.Make}</td>
-                <td className="px-4 py-2">{car.Model}</td>
-                <td className="px-4 py-2">{car.ElectricVehicleType}</td>
-                <td className="px-4 py-2">{car.Eligibility}</td>
-                <td className="px-4 py-2">{car.ElectricRange}</td>
-                <td className="px-4 py-2">{car.MSRP}</td>
-                <td className="px-4 py-2">{car.LegislativeDistrict}</td>
-                <td className="px-4 py-2">{car.DOLVehicleID}</td>
-                <td className="px-4 py-2">{car.VehicleLocation}</td>
-                <td className="px-4 py-2">{car.ElectricUtility}</td>
-                <td className="px-4 py-2">{car.CensusTract}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex justify-center gap-2 mt-4">
-        <div className="text-sm text-gray-600">
-          Showing {filteredData.length} of {data.length} entries
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pb-4">
+        <Input
+          placeholder="Search all columns..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-xs bg-background text-foreground"
+        />
+        <div className="text-sm text-muted-foreground">
+          Showing {processedData.length} of {data.length} entries
         </div>
-        <button
-          onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-          disabled={currentPage === 1}
-          className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-        >
-          Previous
-        </button>
-        <span className="px-4 py-2">
-          Page {currentPage} of {totalPages}
-        </span>
-        <button
-          onClick={() =>
-            setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-          }
-          disabled={currentPage === totalPages}
-          className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-        >
-          Next
-        </button>
+      </div>
+
+      <div className="border rounded-lg border-border">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-foreground">
+            <thead className="bg-muted">
+              <tr className="text-left text-muted-foreground">
+                {renderColumnHeader("VIN", "VIN")}
+                {renderColumnHeader("County", "County")}
+                {renderColumnHeader("City", "City")}
+                {renderColumnHeader("State", "State")}
+                {renderColumnHeader("PostalCode", "Postal Code")}
+                {renderColumnHeader("ModelYear", "Year")}
+                {renderColumnHeader("Make", "Make")}
+                {renderColumnHeader("Model", "Model")}
+                {renderColumnHeader("ElectricVehicleType", "Type")}
+                {renderColumnHeader("Eligibility", "Eligibility")}
+                {renderColumnHeader("ElectricRange", "Range")}
+                {renderColumnHeader("MSRP", "MSRP")}
+                {renderColumnHeader("LegislativeDistrict", "District")}
+                {renderColumnHeader("DOLVehicleID", "DOL ID")}
+                {renderColumnHeader("VehicleLocation", "Location")}
+                {renderColumnHeader("ElectricUtility", "Utility")}
+                {renderColumnHeader("CensusTract", "Census")}
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedData.map((car, index) => (
+                <tr
+                  key={index}
+                  className="border-t border-border hover:bg-muted/50"
+                >
+                  <td className="px-4 py-2 text-foreground">
+                    {car.VIN?.slice(0, 10)}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">{car.County}</td>
+                  <td className="px-4 py-2 text-foreground">{car.City}</td>
+                  <td className="px-4 py-2 text-foreground">{car.State}</td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.PostalCode}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">{car.ModelYear}</td>
+                  <td className="px-4 py-2 text-foreground">{car.Make}</td>
+                  <td className="px-4 py-2 text-foreground">{car.Model}</td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.ElectricVehicleType}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.Eligibility}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.ElectricRange}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">{car.MSRP}</td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.LegislativeDistrict}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.DOLVehicleID}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.VehicleLocation}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.ElectricUtility}
+                  </td>
+                  <td className="px-4 py-2 text-foreground">
+                    {car.CensusTract}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between px-2">
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            onClick={() =>
+              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+            }
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Items per page:</span>
+          <Select
+            value={itemsPerPage.toString()}
+            onValueChange={(value) => handleItemsPerPageChange(Number(value))}
+          >
+            <SelectTrigger className="w-20">
+              <SelectValue>{itemsPerPage}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {[5, 10, 15, 20, 25, 50].map((value) => (
+                <SelectItem key={value} value={value.toString()}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </div>
   );
